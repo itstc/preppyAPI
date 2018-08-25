@@ -1,35 +1,40 @@
 package main
 
 import (
-	"encoding/json"
+	"database/sql"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
+	"github.com/itstc/preppyAPI/models"
 	"github.com/lib/pq"
 
 	"github.com/gorilla/mux"
 )
 
-// Recipe is our json format for preppy recipes
-type Recipe struct {
-	ID           int      `json:"id"`
-	Name         string   `json:"name"`
-	URL          string   `json:"url"`
-	Src          string   `json:"src"`
-	Ingredients  []string `json:"ingredients"`
-	Instructions []string `json:"instructions"`
-	Img          string   `json:"img"`
-	Video        string   `json:"video"`
-	Category     string   `json:"category"`
-}
+var (
+	JSONGetRecipeError = map[string]string{
+		"error": "unable to retrieve recipes!",
+	}
+	JSONGetRecipeIDError = map[string]string{
+		"error": "unable to retrieve recipes!",
+	}
+)
 
 // GetRecipes will query 20 rows of recipes and encode them to json
-func GetRecipes(w http.ResponseWriter, r *http.Request) {
+func (a *App) GetRecipes(w http.ResponseWriter, r *http.Request) {
+	// logging request
+	fmt.Printf("%s > GET Recipes\n", r.RemoteAddr)
+
 	// default page offset
 	pageOffset := 0
+	pageLimit := 20
 
-	// query parameters
+	// query quantity parameters
 	page := r.URL.Query().Get("page")
+	limit := r.URL.Query().Get("limit")
+
 	// check if page query exists
 	if page != "" {
 		// offset rows result by 20 * pagenumber
@@ -37,41 +42,80 @@ func GetRecipes(w http.ResponseWriter, r *http.Request) {
 		pageOffset = 20 * pagenum
 	}
 
-	// begin query for recipes
-	rows, _ := Db.Query(
-		`
-		SELECT pid, name, url, src, ingredients, instructions, img, video, category 
-		FROM recipe LIMIT 20 OFFSET $1;
-		`, pageOffset)
+	// set limit if exists
+	if limit != "" {
+		pageLimit, _ = strconv.Atoi(limit)
+
+		// max return is length of 20 recipes
+		if pageLimit > 20 {
+			pageLimit = 20
+		}
+	}
+
+	// query search parameters
+	search := []string{}
+	if id := r.URL.Query().Get("id"); id != "" {
+		search = strings.Split(id, ",")
+	}
+
+	var rows *sql.Rows
+	var err error
+
+	// begin query
+	if len(search) > 0 {
+		// we are searching based on given ids
+		rows, err = a.Db.Query(
+			`
+			SELECT id, name, img 
+			FROM recipe WHERE pid = ANY($1) LIMIT $2 OFFSET $3;
+			`, pq.Array(search), pageLimit, pageOffset)
+	} else {
+		// do regular search based on likes
+		rows, err = a.Db.Query(
+			`
+			SELECT id, name, img 
+			FROM recipe LIMIT $1 OFFSET $2;
+			`, pageLimit, pageOffset)
+	}
+
+	// error has occurred during query
+	if err != nil {
+		WriteJSON(w, JSONGetRecipeError)
+		return
+	}
 
 	// add query rows to results slice
-	var results []Recipe
+	var results []models.Recipe
 	for rows.Next() {
-		res := Recipe{}
-		rows.Scan(&res.ID, &res.Name, &res.URL,
-			&res.Src, pq.Array(&res.Ingredients), pq.Array(&res.Instructions),
-			&res.Img, &res.Video, &res.Category)
+		res := models.Recipe{}
+		rows.Scan(&res.ID, &res.Name, &res.Img)
 
 		results = append(results, res)
 	}
 
-	// encode results to json
-	json.NewEncoder(w).Encode(results)
+	// return json response of recipes
+	WriteJSON(w, results)
+
 }
 
-// GetRecipeById returns a recipe with id given
-func GetRecipeByID(w http.ResponseWriter, r *http.Request) {
+// GetRecipeByID returns a recipe with id given
+func (a *App) GetRecipeByID(w http.ResponseWriter, r *http.Request) {
+
 	params := mux.Vars(r)
 
-	row := Db.QueryRow(
+	// logging request
+	fmt.Printf("%s > GET Recipes by ID (%s)\n", r.RemoteAddr, params["id"])
+
+	row := a.Db.QueryRow(
 		`
-		SELECT pid, name, url, src, ingredients, instructions, img, video, category FROM recipe WHERE pid = $1;
+		SELECT id, name, servings, url, src, ingredients, instructions, img, video, category FROM recipe WHERE id = $1;
 		`, params["id"])
 
-	res := Recipe{}
-	row.Scan(&res.ID, &res.Name, &res.URL,
+	res := models.Recipe{}
+	row.Scan(&res.ID, &res.Name, &res.Servings, &res.URL,
 		&res.Src, pq.Array(&res.Ingredients), pq.Array(&res.Instructions),
 		&res.Img, &res.Video, &res.Category)
 
-	json.NewEncoder(w).Encode(res)
+	// encode result to json
+	WriteJSON(w, res)
 }
