@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -24,8 +23,6 @@ var (
 
 // GetRecipes will query 20 rows of recipes and encode them to json
 func (a *App) GetRecipes(w http.ResponseWriter, r *http.Request) {
-	// logging request
-	fmt.Printf("%s > GET Recipes\n", r.RemoteAddr)
 
 	// default page offset
 	pageOffset := 0
@@ -100,11 +97,8 @@ func (a *App) GetRecipes(w http.ResponseWriter, r *http.Request) {
 
 // GetRecipeByID returns a recipe with id given
 func (a *App) GetRecipeByID(w http.ResponseWriter, r *http.Request) {
-
+	// retrieve uri parameters
 	params := mux.Vars(r)
-
-	// logging request
-	fmt.Printf("%s > GET Recipes by ID (%s)\n", r.RemoteAddr, params["id"])
 
 	row := a.Db.QueryRow(
 		`

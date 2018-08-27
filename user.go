@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"regexp"
 	"time"
@@ -29,9 +28,8 @@ var (
 
 // AuthUser is a get method that returns if token is valid
 func (a *App) AuthUser(w http.ResponseWriter, r *http.Request) {
-	// logging request
-	fmt.Printf("%s > GET Auth User\n", r.RemoteAddr)
 
+	// parse jwt given in header
 	jwt, err := jws.ParseJWTFromRequest(r)
 	// no token found in request
 	if err != nil {
@@ -68,6 +66,13 @@ func (a *App) AuthUser(w http.ResponseWriter, r *http.Request) {
 // LogoutUser logs current user token to blacklist such that it cant be used
 func (a *App) LogoutUser(w http.ResponseWriter, r *http.Request) {
 
+	// check if an account is logged in or not
+	if r.Header.Get("User") == "" {
+		WriteJSON(w, map[string]string{
+			"error": "no account logged in!",
+		})
+		return
+	}
 	// find token in auth header
 	authToken := string(r.Header.Get("Authorization")[7:])
 	if authToken == "" {
@@ -89,8 +94,14 @@ func (a *App) LogoutUser(w http.ResponseWriter, r *http.Request) {
 
 // RegisterUser takes email, name, and password from body and creates a new user in database
 func (a *App) RegisterUser(w http.ResponseWriter, r *http.Request) {
-	// logging request
-	fmt.Printf("%s > POST Register User\n", r.RemoteAddr)
+
+	// check if an account is logged in or not
+	if r.Header.Get("User") != "" {
+		WriteJSON(w, map[string]string{
+			"error": "already logged in!",
+		})
+		return
+	}
 
 	var jr map[string]interface{}
 
@@ -133,9 +144,16 @@ func (a *App) RegisterUser(w http.ResponseWriter, r *http.Request) {
 
 // LoginUser takes email and password from body and returns a authentication token if successful
 func (a *App) LoginUser(w http.ResponseWriter, r *http.Request) {
-	// logging request
-	fmt.Printf("%s > POST Login User\n", r.RemoteAddr)
 
+	// check if an account is logged in or not
+	if r.Header.Get("User") != "" {
+		WriteJSON(w, map[string]string{
+			"error": "already logged in!",
+		})
+		return
+	}
+
+	// place json response in map
 	var jr map[string]interface{}
 
 	// Read and proccess body request

@@ -68,10 +68,15 @@ func main() {
 	router := mux.NewRouter()
 	router.HandleFunc("/api/recipes", app.GetRecipes).Methods("GET")
 	router.HandleFunc("/api/recipes/{id}", app.GetRecipeByID).Methods("GET")
-	router.HandleFunc("/api/users/register", app.RegisterUser).Methods("POST")
-	router.HandleFunc("/api/users/login", app.LoginUser).Methods("POST")
-	router.HandleFunc("/api/users/logout", app.LogoutUser).Methods("POST")
+
+	router.Handle("/api/users/register", app.Auth(http.HandlerFunc(app.RegisterUser))).Methods("POST")
+	router.Handle("/api/users/login", app.Auth(http.HandlerFunc(app.LoginUser))).Methods("POST")
+	router.Handle("/api/users/logout", app.Auth(http.HandlerFunc(app.LogoutUser))).Methods("POST")
+
 	router.HandleFunc("/api/users/auth", app.AuthUser).Methods("GET")
+
+	// global middlewares
+	router.Use(LoggingMiddleware)
 
 	// start server
 	fmt.Println("Server listening on localhost:8000")
