@@ -12,19 +12,16 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/go-redis/redis"
+
 	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
-)
-
-// All global variables here
-var (
-	Db     *sql.DB
-	RSAKey *rsa.PrivateKey
 )
 
 type App struct {
 	Db     *sql.DB
 	RSAKey *rsa.PrivateKey
+	Redis  *redis.Client
 }
 
 // Initialize initializes database and rsa keypair
@@ -38,6 +35,15 @@ func (a *App) Initialize(config map[string]string) {
 	// check if any errors during connection to database
 	CheckErr(err)
 	CheckErr(a.Db.Ping())
+
+	a.Redis = redis.NewClient(&redis.Options{
+		Addr:     Config["redishost"],
+		Password: Config["redispassword"],
+		DB:       0, // use default DB
+	})
+
+	_, err = a.Redis.Ping().Result()
+	CheckErr(err)
 
 	// Get RSA keypair from file path
 	a.RSAKey, err = GetKeyFromFile(config["rsakeypath"])
@@ -64,6 +70,7 @@ func main() {
 	router.HandleFunc("/api/recipes/{id}", app.GetRecipeByID).Methods("GET")
 	router.HandleFunc("/api/users/register", app.RegisterUser).Methods("POST")
 	router.HandleFunc("/api/users/login", app.LoginUser).Methods("POST")
+	router.HandleFunc("/api/users/logout", app.LogoutUser).Methods("POST")
 	router.HandleFunc("/api/users/auth", app.AuthUser).Methods("GET")
 
 	// start server

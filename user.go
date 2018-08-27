@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
+	"time"
 
 	"github.com/SermoDigital/jose/crypto"
 	"github.com/SermoDigital/jose/jws"
@@ -37,6 +39,19 @@ func (a *App) AuthUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// do a lookup of token in blacklist
+	serializedToken := string(r.Header.Get("Authorization")[7:])
+	_, err = a.Redis.Get(serializedToken).Result()
+
+	// token is found in blacklist so do not continue
+	if err == nil {
+		WriteJSON(w, map[string]interface{}{
+			"error": "invalid token used!",
+			"auth":  false,
+		})
+		return
+	}
+
 	// check if token is valid
 	if err := jwt.Validate(a.RSAKey.Public(), crypto.SigningMethodRS256); err != nil {
 		WriteJSON(w, JSONAuthError)
@@ -48,6 +63,28 @@ func (a *App) AuthUser(w http.ResponseWriter, r *http.Request) {
 		"message": "auth successful!",
 		"auth":    true,
 	})
+}
+
+// LogoutUser logs current user token to blacklist such that it cant be used
+func (a *App) LogoutUser(w http.ResponseWriter, r *http.Request) {
+
+	// find token in auth header
+	authToken := string(r.Header.Get("Authorization")[7:])
+	if authToken == "" {
+		WriteJSON(w, JSONAuthError)
+		return
+	}
+
+	// Set token in redis database
+	_, err := a.Redis.Set(authToken, true, 0).Result()
+	if err != nil {
+		WriteJSON(w, JSONAuthError)
+		return
+	}
+
+	// everything went well return success response
+	WriteJSON(w, map[string]string{"ok": "1", "message": "logged out user!"})
+
 }
 
 // RegisterUser takes email, name, and password from body and creates a new user in database
@@ -69,10 +106,12 @@ func (a *App) RegisterUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 1 uppercase and password length >= 8
-	// if match, _ := regexp.MatchString("^(?=.*[A-Z]){8,}$", jr["password"].(string)); !match {
-	// 	responseEncoder.Encode(map[string]string{"error": "Invalid Password! (1 uppercase and at least 8 characters)"})
-	// 	return
-	// }
+	if match, _ := regexp.MatchString("[A-Z].{7,}$", jr["password"].(string)); !match {
+		WriteJSON(w, map[string]string{
+			"error": "Invalid Password! (1 uppercase and at least 8 characters)",
+		})
+		return
+	}
 
 	// convert string password to hash
 	jr["password"], err = bcrypt.GenerateFromPassword([]byte(jr["password"].(string)), HASHCOST)
@@ -138,6 +177,7 @@ func (a *App) LoginUser(w http.ResponseWriter, r *http.Request) {
 		"id":    userID,
 		"name":  username,
 		"email": jr["email"].(string),
+		"time":  time.Now(),
 	}
 
 	jwt := jws.NewJWT(claims, crypto.SigningMethodRS256)
