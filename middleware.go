@@ -39,9 +39,9 @@ func (a *App) Auth(next http.Handler) http.Handler {
 		}
 
 		// check if email is found in claim
-		if jwt.Claims().Get("email") != nil {
+		if jwt.Claims().Get("id") != nil {
 			// insert email of user from token to request header
-			r.Header.Set("User", jwt.Claims().Get("email").(string))
+			r.Header.Set("User", jwt.Claims().Get("id").(string))
 		}
 
 		// serve route endpoint with user in header

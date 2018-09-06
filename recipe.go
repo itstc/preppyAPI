@@ -17,7 +17,7 @@ var (
 		"error": "unable to retrieve recipes!",
 	}
 	JSONGetRecipeIDError = map[string]string{
-		"error": "unable to retrieve recipes!",
+		"error": "unable to retrieve recipe!",
 	}
 )
 
@@ -100,13 +100,20 @@ func (a *App) GetRecipeByID(w http.ResponseWriter, r *http.Request) {
 	// retrieve uri parameters
 	params := mux.Vars(r)
 
-	row := a.Db.QueryRow(
+	rows, err := a.Db.Query(
 		`
 		SELECT id, name, servings, url, src, ingredients, instructions, img, video, category FROM recipe WHERE id = $1;
 		`, params["id"])
 
+	// error or no results
+	if err != nil || !rows.Next() {
+		w.WriteHeader(404)
+		WriteJSON(w, JSONGetRecipeIDError)
+		return
+	}
+
 	res := models.Recipe{}
-	row.Scan(&res.ID, &res.Name, &res.Servings, &res.URL,
+	rows.Scan(&res.ID, &res.Name, &res.Servings, &res.URL,
 		&res.Src, pq.Array(&res.Ingredients), pq.Array(&res.Instructions),
 		&res.Img, &res.Video, &res.Category)
 

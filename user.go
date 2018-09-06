@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"regexp"
+	"strconv"
 	"time"
 
 	"github.com/SermoDigital/jose/crypto"
@@ -33,6 +34,7 @@ func (a *App) AuthUser(w http.ResponseWriter, r *http.Request) {
 	jwt, err := jws.ParseJWTFromRequest(r)
 	// no token found in request
 	if err != nil {
+		w.WriteHeader(400)
 		WriteJSON(w, JSONAuthError)
 		return
 	}
@@ -41,8 +43,9 @@ func (a *App) AuthUser(w http.ResponseWriter, r *http.Request) {
 	serializedToken := string(r.Header.Get("Authorization")[7:])
 	_, err = a.Redis.Get(serializedToken).Result()
 
-	// token is found in blacklist so do not continue
+	// token is found in blacklist (no errors) so do not continue
 	if err == nil {
+		w.WriteHeader(400)
 		WriteJSON(w, map[string]interface{}{
 			"error": "invalid token used!",
 			"auth":  false,
@@ -52,14 +55,23 @@ func (a *App) AuthUser(w http.ResponseWriter, r *http.Request) {
 
 	// check if token is valid
 	if err := jwt.Validate(a.RSAKey.Public(), crypto.SigningMethodRS256); err != nil {
+		w.WriteHeader(400)
+		WriteJSON(w, JSONAuthError)
+		return
+	}
+
+	// invalid claims found
+	if jwt.Claims().Get("id") == nil || jwt.Claims().Get("name") == nil {
+		w.WriteHeader(400)
 		WriteJSON(w, JSONAuthError)
 		return
 	}
 
 	// successfully verified token
 	WriteJSON(w, map[string]interface{}{
-		"message": "auth successful!",
-		"auth":    true,
+		"id":   jwt.Claims().Get("id").(string),
+		"name": jwt.Claims().Get("name").(string),
+		"auth": true,
 	})
 }
 
@@ -147,6 +159,7 @@ func (a *App) LoginUser(w http.ResponseWriter, r *http.Request) {
 
 	// check if an account is logged in or not
 	if r.Header.Get("User") != "" {
+		w.WriteHeader(403)
 		WriteJSON(w, map[string]string{
 			"error": "already logged in!",
 		})
@@ -161,6 +174,7 @@ func (a *App) LoginUser(w http.ResponseWriter, r *http.Request) {
 	buffer.ReadFrom(r.Body)
 	err := json.Unmarshal(buffer.Bytes(), &jr)
 	if err != nil {
+		w.WriteHeader(400)
 		WriteJSON(w, JSONLoginError)
 		return
 	}
@@ -174,12 +188,14 @@ func (a *App) LoginUser(w http.ResponseWriter, r *http.Request) {
 
 	// error querying for password
 	if err != nil {
+		w.WriteHeader(400)
 		WriteJSON(w, JSONLoginError)
 		return
 	}
 
 	// no password found in query (account DNE)
 	if len(hashPassword) == 0 {
+		w.WriteHeader(400)
 		WriteJSON(w, JSONLoginError)
 		return
 	}
@@ -187,29 +203,31 @@ func (a *App) LoginUser(w http.ResponseWriter, r *http.Request) {
 	// error when comparing hash and password
 	err = bcrypt.CompareHashAndPassword(hashPassword, []byte(jr["password"].(string)))
 	if err != nil {
+		w.WriteHeader(400)
 		WriteJSON(w, JSONLoginError)
 		return
 	}
 
 	var claims = jws.Claims{
-		"id":    userID,
-		"name":  username,
-		"email": jr["email"].(string),
-		"time":  time.Now(),
+		"id":   strconv.Itoa(userID),
+		"name": username,
+		"time": time.Now(),
 	}
 
 	jwt := jws.NewJWT(claims, crypto.SigningMethodRS256)
 	token, err := jwt.Serialize(a.RSAKey)
 
 	if err != nil {
+		w.WriteHeader(400)
 		WriteJSON(w, JSONLoginError)
 		return
 	}
 
 	// password matches hashed password so login successful
 	WriteJSON(w, map[string]string{
-		"ok":      "1",
 		"message": "successfully logged in!",
+		"id":      strconv.Itoa(userID),
+		"name":    username,
 		"token":   string(token),
 	})
 }

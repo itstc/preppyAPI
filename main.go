@@ -64,15 +64,18 @@ func main() {
 	app.Initialize(Config)
 	defer app.Db.Close()
 
-	// handle routes to api
+	// recipe routes
 	router := mux.NewRouter()
 	router.HandleFunc("/api/recipes", app.GetRecipes).Methods("GET")
 	router.HandleFunc("/api/recipes/{id}", app.GetRecipeByID).Methods("GET")
 
+	router.HandleFunc("/api/plans", app.GetPlans).Methods("GET")
+	router.HandleFunc("/api/plans/{id}", app.GetPlanByID).Methods("GET")
+
+	// user routes requiring auth
 	router.Handle("/api/users/register", app.Auth(http.HandlerFunc(app.RegisterUser))).Methods("POST")
 	router.Handle("/api/users/login", app.Auth(http.HandlerFunc(app.LoginUser))).Methods("POST")
 	router.Handle("/api/users/logout", app.Auth(http.HandlerFunc(app.LogoutUser))).Methods("POST")
-
 	router.HandleFunc("/api/users/auth", app.AuthUser).Methods("GET")
 
 	// global middlewares
